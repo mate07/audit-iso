@@ -1,7 +1,6 @@
-import sqlite3 from 'sqlite3';
-import path from 'path';
+import { createClient, Client } from '@libsql/client';
 
-// Interfaz básica para emular la promesa de 'sqlite' usando 'sqlite3' directamente
+// Interfaz básica para emular la promesa de 'sqlite' usando '@libsql/client'
 export interface Database {
   exec(sql: string): Promise<void>;
   run(sql: string, params?: any[]): Promise<void>;
@@ -9,72 +8,50 @@ export interface Database {
   all<T = any>(sql: string, params?: any[]): Promise<T[]>;
 }
 
-let dbInstance: sqlite3.Database | null = null;
+let clientInstance: Client | null = null;
 
-// Wrapper promisificado
-class DBWrapper implements Database {
-  private db: sqlite3.Database;
+// Wrapper adaptador para mantener compatibilidad con el código existente
+class LibSQLWrapper implements Database {
+  private client: Client;
 
-  constructor(db: sqlite3.Database) {
-    this.db = db;
+  constructor(client: Client) {
+    this.client = client;
   }
 
-  exec(sql: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.exec(sql, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+  async exec(sql: string): Promise<void> {
+    await this.client.executeMultiple(sql);
   }
 
-  run(sql: string, params: any[] = []): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, params, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+  async run(sql: string, params: any[] = []): Promise<void> {
+    await this.client.execute({ sql, args: params });
   }
 
-  get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
-    return new Promise((resolve, reject) => {
-      this.db.get(sql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row as T);
-      });
-    });
+  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+    const result = await this.client.execute({ sql, args: params });
+    return result.rows[0] as unknown as T;
   }
 
-  all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(sql, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows as T[]);
-      });
-    });
+  async all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    const result = await this.client.execute({ sql, args: params });
+    return result.rows as unknown as T[];
   }
 }
 
 export async function getDb(): Promise<Database> {
-  const dbPath = path.join(process.cwd(), 'audit.db');
-  
-  if (!dbInstance) {
-    await new Promise<void>((resolve, reject) => {
-      dbInstance = new sqlite3.Database(dbPath, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+  if (!clientInstance) {
+    const url = process.env.TURSO_URL || "file:audit.db";
+    const authToken = process.env.TURSO_TOKEN;
+
+    clientInstance = createClient({
+      url: url,
+      authToken: authToken,
     });
   }
 
-  if (!dbInstance) {
-    throw new Error('Database initialization failed');
-  }
-
-  const db = new DBWrapper(dbInstance);
+  const db = new LibSQLWrapper(clientInstance);
 
   // Inicializar tablas
+  // Usamos executeMultiple para el seed inicial
   await db.exec(`
     CREATE TABLE IF NOT EXISTS roles (
       id TEXT PRIMARY KEY,
@@ -123,15 +100,13 @@ export async function getDb(): Promise<Database> {
     -- Seed roles if empty
     INSERT OR IGNORE INTO roles (id, name) VALUES ('r-admin', 'Administrador');
     INSERT OR IGNORE INTO roles (id, name) VALUES ('r-auditor', 'Auditor');
-
-    -- Migraciones manuales para columnas faltantes (si el archivo ya existía)
-    -- SQLite no soporta ADD COLUMN IF NOT EXISTS directamente de forma sencilla en una sola línea, 
-    -- pero podemos intentar agregarlas ignorando el error si ya existen.
   `);
 
-  try { await db.exec('ALTER TABLE audits ADD COLUMN empresa TEXT;'); } catch(e) {}
-  try { await db.exec('ALTER TABLE audits ADD COLUMN direccion TEXT;'); } catch(e) {}
-  try { await db.exec('ALTER TABLE audits ADD COLUMN responsable TEXT;'); } catch(e) {}
+  // Intentar agregar columnas si no existen (migraciones manuales)
+  // Nota: Turso/LibSQL maneja esto de forma similar a SQLite
+  try { await db.run('ALTER TABLE audits ADD COLUMN empresa TEXT;'); } catch(e) {}
+  try { await db.run('ALTER TABLE audits ADD COLUMN direccion TEXT;'); } catch(e) {}
+  try { await db.run('ALTER TABLE audits ADD COLUMN responsable TEXT;'); } catch(e) {}
 
   return db;
 }

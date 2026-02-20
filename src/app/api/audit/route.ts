@@ -2,18 +2,25 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    }
+
     const db = await getDb();
     
-    // Obtener la última auditoría
+    // Obtener la última auditoría del usuario específico
     const audit = await db.get<{ 
       id: string, 
       currentStepIndex: number,
       empresa: string | null,
       direccion: string | null,
       responsable: string | null
-    }>('SELECT * FROM audits ORDER BY updatedAt DESC LIMIT 1');
+    }>('SELECT * FROM audits WHERE userId = ? ORDER BY updatedAt DESC LIMIT 1', [userId]);
 
     if (!audit) {
       return NextResponse.json(null);
@@ -53,7 +60,11 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { team, responses, currentStepIndex, id: existingId, empresa, direccion, responsable } = body;
+    const { team, responses, currentStepIndex, id: existingId, empresa, direccion, responsable, userId } = body;
+
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    }
 
     const id = existingId || uuidv4();
     const now = new Date().toISOString();
@@ -65,14 +76,14 @@ export async function POST(request: Request) {
       if (existingId) {
         // Actualizar auditoría existente
         await db.run(
-          'UPDATE audits SET updatedAt = ?, currentStepIndex = ?, empresa = ?, direccion = ?, responsable = ? WHERE id = ?',
-          [now, currentStepIndex, empresa || '', direccion || '', responsable || '', id]
+          'UPDATE audits SET updatedAt = ?, currentStepIndex = ?, empresa = ?, direccion = ?, responsable = ?, userId = ? WHERE id = ?',
+          [now, currentStepIndex, empresa || '', direccion || '', responsable || '', userId, id]
         );
       } else {
         // Crear nueva auditoría
         await db.run(
-          'INSERT INTO audits (id, createdAt, updatedAt, currentStepIndex, empresa, direccion, responsable) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [id, now, now, currentStepIndex, empresa || '', direccion || '', responsable || '']
+          'INSERT INTO audits (id, userId, createdAt, updatedAt, currentStepIndex, empresa, direccion, responsable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [id, userId, now, now, currentStepIndex, empresa || '', direccion || '', responsable || '']
         );
       }
 
@@ -111,18 +122,24 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    }
+
     const db = await getDb();
     
-    // En lugar de borrar, creamos una nueva auditoría en blanco.
-    // Al insertarla con la fecha actual, se convertirá en la "última" para el método GET.
+    // En lugar de borrar, creamos una nueva auditoría en blanco vinculada al usuario.
     const newAuditId = uuidv4();
     const now = new Date().toISOString();
     
     await db.run(
-      'INSERT INTO audits (id, currentStepIndex, createdAt, updatedAt, empresa, direccion, responsable) VALUES (?, 0, ?, ?, ?, ?, ?)',
-      [newAuditId, now, now, '', '', '']
+      'INSERT INTO audits (id, userId, currentStepIndex, createdAt, updatedAt, empresa, direccion, responsable) VALUES (?, ?, 0, ?, ?, ?, ?, ?)',
+      [newAuditId, userId, now, now, '', '', '']
     );
 
     return NextResponse.json({ 

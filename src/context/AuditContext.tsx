@@ -5,6 +5,7 @@ import { AuditQuestion, QuestionResponse, ISODomain, Auditor } from '@/types/aud
 import { ISO_27001_DATA } from '@/lib/iso-data';
 import { calculateGlobalIndex, countNonConformities } from '@/lib/audit-utils';
 import { generateRecommendations, Recommendation } from '@/lib/analysis-utils';
+import { useAuth } from './AuthContext';
 
 const STORAGE_KEY = 'iso_audit_data';
 
@@ -49,6 +50,8 @@ interface AuditContextType {
 const AuditContext = createContext<AuditContextType | undefined>(undefined);
 
 export function AuditProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  
   // State
   const [team, setTeamState] = useState<Auditor[]>([]);
   const [empresa, setEmpresa] = useState('');
@@ -60,11 +63,27 @@ export function AuditProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState(false);
   const [auditId, setAuditId] = useState<string | null>(null);
 
+  // Clear state when user logs out
+  useEffect(() => {
+    if (!user) {
+      setTeamState([]);
+      setEmpresa('');
+      setDireccion('');
+      setResponsable('');
+      setResponses({});
+      setCurrentStepIndex(0);
+      setLastSaved(null);
+      setAuditId(null);
+    }
+  }, [user]);
+
   // Load from API (SQLite) then LocalStorage on mount
   useEffect(() => {
+    if (!user) return;
+
     const initData = async () => {
       try {
-        const response = await fetch('/api/audit');
+        const response = await fetch(`/api/audit?userId=${user.id}`);
         const dbData = await response.json();
         
         if (dbData && dbData.responses) {
@@ -82,13 +101,17 @@ export function AuditProvider({ children }: { children: ReactNode }) {
         console.error("Failed to load from DB, trying localStorage", e);
       }
 
-      // Fallback to localStorage
-      const savedData = localStorage.getItem(STORAGE_KEY);
+      // Fallback to localStorage (prefixed by userId)
+      const userStorageKey = `${STORAGE_KEY}_${user.id}`;
+      const savedData = localStorage.getItem(userStorageKey);
       if (savedData) {
         try {
           const parsed = JSON.parse(savedData);
           if (parsed.team) setTeamState(parsed.team);
           if (parsed.responses) setResponses(parsed.responses);
+          if (parsed.empresa) setEmpresa(parsed.empresa);
+          if (parsed.direccion) setDireccion(parsed.direccion);
+          if (parsed.responsable) setResponsable(parsed.responsable);
           if (parsed.currentStepIndex !== undefined) setCurrentStepIndex(parsed.currentStepIndex);
           setLastSaved(new Date());
         } catch (e) {
@@ -98,10 +121,12 @@ export function AuditProvider({ children }: { children: ReactNode }) {
     };
 
     initData();
-  }, []);
+  }, [user]);
 
   // Sync with SQLite (API) on changes
   useEffect(() => {
+    if (!user) return;
+    
     const syncWithDB = async () => {
       setIsSaving(true);
       try {
@@ -110,6 +135,7 @@ export function AuditProvider({ children }: { children: ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: auditId,
+            userId: user.id,
             team,
             empresa,
             direccion,
@@ -125,7 +151,8 @@ export function AuditProvider({ children }: { children: ReactNode }) {
         }
 
         // Also update localStorage as backup
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        const userStorageKey = `${STORAGE_KEY}_${user.id}`;
+        localStorage.setItem(userStorageKey, JSON.stringify({
           team,
           empresa,
           direccion,
@@ -142,13 +169,15 @@ export function AuditProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const timeout = setTimeout(syncWithDB, 1000); // 1s debounce for DB sync
+    const timeout = setTimeout(syncWithDB, 2000); // 2s debounce for DB sync
     return () => clearTimeout(timeout);
-  }, [auditId, team, responses, currentStepIndex, empresa, direccion, responsable]);
+  }, [user, auditId, team, responses, currentStepIndex, empresa, direccion, responsable]);
 
   const resetAudit = async () => {
+    if (!user) return;
+    
     try {
-      const resp = await fetch('/api/audit', { method: 'DELETE' });
+      const resp = await fetch(`/api/audit?userId=${user.id}`, { method: 'DELETE' });
       if (resp.ok) {
         const data = await resp.json();
         // Limpiar estado local
@@ -160,7 +189,9 @@ export function AuditProvider({ children }: { children: ReactNode }) {
         setCurrentStepIndex(0);
         setLastSaved(null);
         setAuditId(data.auditId); // Usar el nuevo ID generado por el servidor
-        localStorage.removeItem(STORAGE_KEY);
+        
+        const userStorageKey = `${STORAGE_KEY}_${user.id}`;
+        localStorage.removeItem(userStorageKey);
       }
     } catch (e) {
       console.error("Failed to start new audit in DB", e);

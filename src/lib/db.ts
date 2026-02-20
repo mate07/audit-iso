@@ -70,12 +70,14 @@ export async function getDb(): Promise<Database> {
 
     CREATE TABLE IF NOT EXISTS audits (
       id TEXT PRIMARY KEY,
+      userId TEXT,
       empresa TEXT,
       direccion TEXT,
       responsable TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      currentStepIndex INTEGER DEFAULT 0
+      currentStepIndex INTEGER DEFAULT 0,
+      FOREIGN KEY (userId) REFERENCES users (id)
     );
 
     CREATE TABLE IF NOT EXISTS auditors (
@@ -104,6 +106,7 @@ export async function getDb(): Promise<Database> {
 
   // Intentar agregar columnas si no existen (migraciones manuales)
   // Nota: Turso/LibSQL maneja esto de forma similar a SQLite
+  try { await db.run('ALTER TABLE audits ADD COLUMN userId TEXT;'); } catch(e) {}
   try { await db.run('ALTER TABLE audits ADD COLUMN empresa TEXT;'); } catch(e) {}
   try { await db.run('ALTER TABLE audits ADD COLUMN direccion TEXT;'); } catch(e) {}
   try { await db.run('ALTER TABLE audits ADD COLUMN responsable TEXT;'); } catch(e) {}

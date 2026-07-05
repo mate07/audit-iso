@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { createSessionToken, storeSession, SESSION_COOKIE_NAME, type AuthenticatedUser } from '@/lib/auth-session';
 
 export async function POST(request: Request) {
   try {
@@ -13,8 +14,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Buscar al usuario por email
-    const user = await db.get(
+    const user = await db.get<AuthenticatedUser>(
       'SELECT id, nombre, apellido, email, roleId FROM users WHERE email = ?',
       [email]
     );
@@ -26,17 +26,30 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    const token = createSessionToken();
+    await storeSession(token, user.id);
+
+    const response = NextResponse.json({
+      success: true,
       message: 'Inicio de sesión exitoso',
       user: {
         id: user.id,
         nombre: user.nombre,
         apellido: user.apellido,
         email: user.email,
-        roleId: user.roleId
-      }
+        roleId: user.roleId,
+      },
     });
+
+    response.cookies.set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

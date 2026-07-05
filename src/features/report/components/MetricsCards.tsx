@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card } from '@/components/ui/Card';
-import { Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle } from 'lucide-react';
 import { Auditor } from '@/types/audit';
 
 interface MetricsCardsProps {

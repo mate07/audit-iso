@@ -14,14 +14,12 @@ interface User {
 interface AuthContextType {
   user: User | null;
   login: (userData: User) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const AUTH_STORAGE_KEY = 'audit_auth_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -30,51 +28,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Intentar cargar usuario desde localStorage
-    const savedUser = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (savedUser) {
+    let cancelled = false;
+
+    const loadSession = async () => {
       try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Failed to parse saved user', e);
-        localStorage.removeItem(AUTH_STORAGE_KEY);
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setUser(null);
+          }
+          return;
+        }
+
+        const data = await response.json();
+        if (!cancelled) {
+          setUser(data.user ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setUser(null);
+        }
+        console.error('Failed to load current session', error);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
-    }
-    setIsLoading(false);
+    };
+
+    loadSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Efecto para protección de rutas
   useEffect(() => {
     if (!isLoading) {
       const isPublicRoute = pathname === '/register';
-      
+
       if (!user && !isPublicRoute) {
-        router.push('/register');
+        router.replace('/register');
       } else if (user && isPublicRoute) {
-        router.push('/');
+        router.replace('/');
       }
     }
   }, [user, isLoading, pathname, router]);
 
   const login = (userData: User) => {
     setUser(userData);
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    router.push('/register');
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout request failed', error);
+    } finally {
+      setUser(null);
+      router.replace('/register');
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      login, 
-      logout, 
-      isAuthenticated: !!user,
-      isLoading 
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        isAuthenticated: !!user,
+        isLoading,
+      }}
+    >
       {!isLoading && children}
     </AuthContext.Provider>
   );

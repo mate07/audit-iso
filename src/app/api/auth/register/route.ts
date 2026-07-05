@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
+import { createSessionToken, storeSession, SESSION_COOKIE_NAME } from '@/lib/auth-session';
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +14,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verificar si el email ya existe
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
     if (existingUser) {
       return NextResponse.json(
@@ -23,21 +22,40 @@ export async function POST(request: Request) {
       );
     }
 
-    const userId = uuidv4();
-    const defaultRole = roleId || 'r-auditor'; // Por defecto es Auditor
+    const userId = crypto.randomUUID();
+    const defaultRole = roleId || 'r-auditor';
 
     await db.run(
       'INSERT INTO users (id, nombre, apellido, email, roleId) VALUES (?, ?, ?, ?, ?)',
       [userId, nombre, apellido, email, defaultRole]
     );
 
-    return NextResponse.json({ 
-      success: true, 
+    const token = createSessionToken();
+    await storeSession(token, userId);
+
+    const response = NextResponse.json({
+      success: true,
       message: 'Usuario registrado exitosamente',
-      userId 
+      user: {
+        id: userId,
+        nombre,
+        apellido,
+        email,
+        roleId: defaultRole,
+      },
     });
-  } catch (error) {
-    console.error('Registration error:', error);
+
+    response.cookies.set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    return response;
+  } catch {
+    console.error('Registration error');
     return NextResponse.json(
       { error: 'Error al procesar el registro' },
       { status: 500 }
@@ -48,9 +66,9 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const db = await getDb();
-    const roles = await db.all('SELECT * FROM roles');
+    const roles = await db.all('SELECT * FROM roles ORDER BY name ASC');
     return NextResponse.json(roles);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Error fetching roles' }, { status: 500 });
   }
 }

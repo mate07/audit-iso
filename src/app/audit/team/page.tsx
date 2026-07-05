@@ -21,14 +21,14 @@ export default function TeamRegistrationPage() {
   const [team, setTeam] = useState<Auditor[]>(
     globalTeam.length > 0 
       ? globalTeam 
-      : [{ id: uuidv4(), nombre: '', apellido: '', carnet: '' }]
+      : [{ id: uuidv4(), nombre: '', apellido: '', email: '' }]
   );
   const [errors, setErrors] = useState<Record<string, AuditorError>>({});
   const [companyErrors, setCompanyErrors] = useState({ empresa: '', direccion: '', responsable: '' });
 
   const addMember = () => {
     if (team.length < 3) {
-      setTeam([...team, { id: uuidv4(), nombre: '', apellido: '', carnet: '' }]);
+      setTeam([...team, { id: uuidv4(), nombre: '', apellido: '', email: '' }]);
     }
   };
 
@@ -58,15 +58,16 @@ export default function TeamRegistrationPage() {
       delete memberErrors[field as keyof AuditorError];
     }
 
-    if (field === 'carnet' && value.trim()) {
-      const isDuplicate = currentTeam.some(m => m.id !== id && m.carnet.trim().toLowerCase() === value.trim().toLowerCase());
+    if (field === 'email' && value.trim()) {
+      const isDuplicate = currentTeam.some(m => m.id !== id && m.email.trim().toLowerCase() === value.trim().toLowerCase());
       if (isDuplicate) {
-        memberErrors.carnet = 'Este carnet ya ha sido ingresado en el equipo';
+        memberErrors.email = 'Este email ya ha sido ingresado en el equipo';
       }
     }
 
     setErrors({ ...errors, [id]: memberErrors });
   };
+
   const validateCompany = () => {
     const newErrors = {
       empresa: !empresa.trim() ? 'El nombre de la empresa es requerido' : '',
@@ -74,18 +75,18 @@ export default function TeamRegistrationPage() {
       responsable: !responsable.trim() ? 'La persona responsable es requerida' : ''
     };
     setCompanyErrors(newErrors);
-    return !Object.values(newErrors).some(e => !!e);
+    return !Object.values(newErrors).some((error) => !!error);
   };
 
   const isFormValid = () => {
     const hasEmptyCompany = !empresa.trim() || !direccion.trim() || !responsable.trim();
-    const hasEmptyFields = team.some(m => !m.nombre || !m.apellido || !m.carnet);
+    const hasEmptyFields = team.some(m => !m.nombre || !m.apellido || !m.email);
     const hasErrors = Object.values(errors).some(e => Object.keys(e).length > 0);
     return !hasEmptyCompany && !hasEmptyFields && !hasErrors;
   };
 
   const handleConfirm = () => {
-    if (isFormValid()) {
+    if (validateCompany() && isFormValid()) {
       setGlobalTeam(team);
     }
   };
@@ -178,7 +179,7 @@ export default function TeamRegistrationPage() {
         </Link>
         <div className="flex gap-4">
           <Button variant="outline" onClick={() => {
-            setTeam([{ id: uuidv4(), nombre: '', apellido: '', carnet: '' }]);
+            setTeam([{ id: uuidv4(), nombre: '', apellido: '', email: '' }]);
             setEmpresa('');
             setDireccion('');
             setResponsable('');

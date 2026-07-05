@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 
 export default function RegisterPage() {
@@ -56,23 +55,13 @@ export default function RegisterPage() {
       if (response.ok) {
         setStatus({
           type: "success",
-          message: isLogin 
-            ? "¡Bienvenido de nuevo! Redirigiendo..." 
+          message: isLogin
+            ? "¡Bienvenido de nuevo! Redirigiendo..."
             : "¡Registro exitoso! Redirigiendo...",
         });
 
         // Iniciar sesión
-        if (isLogin) {
-          login(data.user);
-        } else {
-          login({
-            id: data.userId,
-            nombre: formData.nombre,
-            apellido: formData.apellido,
-            email: formData.email,
-            roleId: formData.roleId,
-          });
-        }
+        login(data.user);
 
         setTimeout(() => router.push("/"), 1500);
       } else {
@@ -81,7 +70,7 @@ export default function RegisterPage() {
           message: data.error || "Ocurrió un error al procesar la solicitud",
         });
       }
-    } catch (error) {
+    } catch {
       setStatus({
         type: "error",
         message: "Error de conexión con el servidor",

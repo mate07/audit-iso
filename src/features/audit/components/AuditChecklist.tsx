@@ -50,9 +50,9 @@ export function AuditChecklist({ questions, responses, onResponseChange }: Audit
             return (
               <React.Fragment key={question.id}>
                 <tr className="hover:bg-muted/10 transition-colors">
-                  <td className="px-6 py-6 vertical-top min-w-[300px]">
+                  <td className="px-6 py-6 vertical-top min-w-75">
                     <div className="flex gap-4">
-                       <span className="flex-shrink-0 h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold border border-primary/20">
+                       <span className="shrink-0 h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold border border-primary/20">
                           {question.id.split('.').pop() || '•'}
                        </span>
                        <p className="text-sm font-medium text-foreground leading-relaxed">
@@ -95,7 +95,7 @@ export function AuditChecklist({ questions, responses, onResponseChange }: Audit
                         placeholder="Observaciones, hallazgos o evidencias encontradas..."
                         value={response.notes}
                         onChange={(e) => handleNotesChange(question.id, e.target.value)}
-                        className={`min-h-[80px] text-sm ${hasError ? 'border-destructive ring-destructive/10' : ''}`}
+                        className={`min-h-20 text-sm ${hasError ? 'border-destructive ring-destructive/10' : ''}`}
                         label={isNoteRequired ? "Notas Requeridas" : "Observaciones opcionales"}
                         required={isNoteRequired}
                         error={hasError ? "Es obligatorio documentar los hallazgos para este estado." : undefined}

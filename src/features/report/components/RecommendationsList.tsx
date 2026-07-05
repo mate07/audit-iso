@@ -101,7 +101,7 @@ export function RecommendationsList({ recommendations, isCompleted }: Recommenda
   );
 }
 
-function CheckIcon(props: any) {
+function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg
       {...props}

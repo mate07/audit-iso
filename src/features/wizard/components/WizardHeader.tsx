@@ -2,14 +2,14 @@
 
 import React from 'react';
 import { ISODomain } from '@/types/audit';
-import { ISO_27001_DATA } from '@/lib/iso-data';
 
 interface WizardHeaderProps {
   section: ISODomain;
   currentIndex: number;
+  totalSections: number;
 }
 
-export function WizardHeader({ section, currentIndex }: WizardHeaderProps) {
+export function WizardHeader({ section, currentIndex, totalSections }: WizardHeaderProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -17,7 +17,7 @@ export function WizardHeader({ section, currentIndex }: WizardHeaderProps) {
           Dominio {section.id}
         </span>
         <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-          Fase {currentIndex + 1} de {ISO_27001_DATA.length}
+          Fase {currentIndex + 1} de {totalSections}
         </span>
       </div>
       <h1 className="text-4xl font-black tracking-tight text-[#1a365d]">

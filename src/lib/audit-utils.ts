@@ -1,4 +1,4 @@
-import { ISODomain, QuestionResponse, ComplianceStatus } from "@/types/audit";
+import { ISODomain, QuestionResponse } from "@/types/audit";
 
 /**
  * Calcula el porcentaje de cumplimiento para una sección (dominio) específica.

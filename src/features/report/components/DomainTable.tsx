@@ -1,16 +1,16 @@
 'use client';
 
 import React from 'react';
-import { ISO_27001_DATA } from '@/lib/iso-data';
+import { ISODomain, QuestionResponse } from '@/types/audit';
 import { calculateSectionCompliance } from '@/lib/audit-utils';
-import { QuestionResponse } from '@/types/audit';
 import { Card } from '@/components/ui/Card';
 
 interface DomainTableProps {
+  domains: ISODomain[];
   responses: Record<string, QuestionResponse>;
 }
 
-export function DomainTable({ responses }: DomainTableProps) {
+export function DomainTable({ domains, responses }: DomainTableProps) {
   return (
     <Card title="Resumen de Dominios" description="Desglose numérico del cumplimiento por cada sección ISO.">
       <div className="overflow-x-auto mt-4">
@@ -24,11 +24,11 @@ export function DomainTable({ responses }: DomainTableProps) {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-border">
-            {ISO_27001_DATA.map((domain) => {
+            {domains.map((domain) => {
               const compliance = calculateSectionCompliance(domain, responses);
-              const domainQuestions = domain.controls.flatMap(c => c.questions);
-              const answered = domainQuestions.filter(q => !!responses[q.id]?.status).length;
-              
+              const domainQuestions = domain.controls.flatMap((control) => control.questions);
+              const answered = domainQuestions.filter((question) => !!responses[question.id]?.status).length;
+
               return (
                 <tr key={domain.id} className="hover:bg-muted/5 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-primary">

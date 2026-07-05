@@ -1,43 +1,50 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getAuthenticatedUser } from '@/lib/auth-session';
 import { v4 as uuidv4 } from 'uuid';
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const user = await getAuthenticatedUser();
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = await getDb();
-    
-    // Obtener la última auditoría del usuario específico
-    const audit = await db.get<{ 
-      id: string, 
-      currentStepIndex: number,
-      empresa: string | null,
-      direccion: string | null,
-      responsable: string | null
-    }>('SELECT * FROM audits WHERE userId = ? ORDER BY updatedAt DESC LIMIT 1', [userId]);
+    const audit = await db.get<{
+      id: string;
+      currentStepIndex: number;
+      empresa: string | null;
+      direccion: string | null;
+      responsable: string | null;
+    }>(
+      'SELECT * FROM audits WHERE userId = ? ORDER BY updatedAt DESC LIMIT 1',
+      [user.id]
+    );
 
     if (!audit) {
       return NextResponse.json(null);
     }
 
-    // Obtener equipo
-    const team = await db.all<{ id: string, nombre: string, apellido: string, carnet: string }>('SELECT * FROM auditors WHERE auditId = ?', [audit.id]);
+    const team = await db.all<{
+      id: string;
+      nombre: string;
+      apellido: string;
+      email: string | null;
+    }>('SELECT id, nombre, apellido, COALESCE(email, carnet) AS email FROM audit_team_members WHERE auditId = ? ORDER BY createdAt ASC', [audit.id]);
 
-    // Obtener respuestas
-    const responses = await db.all<{ questionId: string, status: string, notes: string | null }>('SELECT * FROM responses WHERE auditId = ?', [audit.id]);
+    const responses = await db.all<{
+      questionId: string;
+      status: string;
+      notes: string | null;
+    }>('SELECT questionId, status, notes FROM audit_responses WHERE auditId = ?', [audit.id]);
 
-    // Transformar respuestas a formato de mapa
-    const responseMap: Record<string, any> = {};
-    responses.forEach((r: { questionId: string, status: string, notes: string | null }) => {
-      responseMap[r.questionId] = {
-        status: r.status,
-        notes: r.notes || '',
+    const responseMap: Record<string, { status: string; notes: string }> = {};
+    responses.forEach((response) => {
+      responseMap[response.questionId] = {
+        status: response.status,
+        notes: response.notes || '',
       };
     });
 
@@ -58,63 +65,94 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const db = await getDb();
-    const body = await request.json();
-    const { team, responses, currentStepIndex, id: existingId, empresa, direccion, responsable, userId } = body;
+    const user = await getAuthenticatedUser();
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const id = existingId || uuidv4();
-    const now = new Date().toISOString();
+    const db = await getDb();
+    const body = await request.json();
+    const {
+      team,
+      responses,
+      currentStepIndex,
+      id: existingId,
+      empresa,
+      direccion,
+      responsable,
+    } = body;
 
-    // Usar una transacción manual
+    const now = new Date().toISOString();
+    const auditId = existingId || uuidv4();
+
     await db.run('BEGIN TRANSACTION');
 
     try {
       if (existingId) {
-        // Actualizar auditoría existente
+        const currentAudit = await db.get<{ id: string }>(
+          'SELECT id FROM audits WHERE id = ? AND userId = ?',
+          [existingId, user.id]
+        );
+
+        if (!currentAudit) {
+          await db.run('ROLLBACK');
+          return NextResponse.json({ error: 'Audit not found' }, { status: 404 });
+        }
+
         await db.run(
-          'UPDATE audits SET updatedAt = ?, currentStepIndex = ?, empresa = ?, direccion = ?, responsable = ?, userId = ? WHERE id = ?',
-          [now, currentStepIndex, empresa || '', direccion || '', responsable || '', userId, id]
+          'UPDATE audits SET updatedAt = ?, currentStepIndex = ?, empresa = ?, direccion = ?, responsable = ? WHERE id = ? AND userId = ?',
+          [now, currentStepIndex, empresa || '', direccion || '', responsable || '', auditId, user.id]
         );
       } else {
-        // Crear nueva auditoría
         await db.run(
           'INSERT INTO audits (id, userId, createdAt, updatedAt, currentStepIndex, empresa, direccion, responsable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [id, userId, now, now, currentStepIndex, empresa || '', direccion || '', responsable || '']
+          [auditId, user.id, now, now, currentStepIndex || 0, empresa || '', direccion || '', responsable || '']
         );
       }
 
-      // Sincronizar equipo (borrar y recrear)
-      await db.run('DELETE FROM auditors WHERE auditId = ?', [id]);
-      if (team && team.length > 0) {
-        for (const m of team) {
+      await db.run('DELETE FROM audit_team_members WHERE auditId = ?', [auditId]);
+      if (Array.isArray(team) && team.length > 0) {
+        for (const member of team) {
+          const email = (member.email || member.carnet || '').trim();
+
+          if (!email) {
+            continue;
+          }
+
           await db.run(
-            'INSERT INTO auditors (id, nombre, apellido, carnet, auditId) VALUES (?, ?, ?, ?, ?)',
-            [uuidv4(), m.nombre, m.apellido, m.carnet, id]
+            'INSERT INTO audit_team_members (id, nombre, apellido, carnet, email, auditId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [uuidv4(), member.nombre, member.apellido, email, email, auditId, now]
           );
         }
       }
 
-      // Sincronizar respuestas (Upsert manual)
-      for (const [qId, res] of Object.entries(responses)) {
-        const r = res as any;
-        await db.run(`
-          INSERT INTO responses (id, questionId, status, notes, auditId)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(auditId, questionId) DO UPDATE SET
-            status = excluded.status,
-            notes = excluded.notes
-        `, [uuidv4(), qId, r.status, r.notes, id]);
+      await db.run('DELETE FROM audit_responses WHERE auditId = ?', [auditId]);
+      for (const [questionId, response] of Object.entries(responses || {})) {
+        const typedResponse = response as { status?: string; notes?: string };
+        if (!typedResponse.status) {
+          continue;
+        }
+
+        await db.run(
+          'INSERT INTO audit_responses (id, questionId, status, notes, auditId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [
+            uuidv4(),
+            questionId,
+            typedResponse.status,
+            typedResponse.notes || '',
+            auditId,
+            now,
+            now,
+          ]
+        );
       }
 
       await db.run('COMMIT');
-      return NextResponse.json({ id });
-    } catch (err) {
+      return NextResponse.json({ id: auditId });
+    } catch (error) {
       await db.run('ROLLBACK');
-      throw err;
+      throw error;
     }
   } catch (error) {
     console.error('Error saving audit:', error);
@@ -122,30 +160,27 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE() {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const user = await getAuthenticatedUser();
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = await getDb();
-    
-    // En lugar de borrar, creamos una nueva auditoría en blanco vinculada al usuario.
     const newAuditId = uuidv4();
     const now = new Date().toISOString();
-    
+
     await db.run(
       'INSERT INTO audits (id, userId, currentStepIndex, createdAt, updatedAt, empresa, direccion, responsable) VALUES (?, ?, 0, ?, ?, ?, ?, ?)',
-      [newAuditId, userId, now, now, '', '', '']
+      [newAuditId, user.id, now, now, '', '', '']
     );
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: 'Nueva auditoría iniciada. La anterior ha sido conservada.',
-      auditId: newAuditId 
+      auditId: newAuditId,
     });
   } catch (error) {
     console.error('Error starting new audit:', error);

@@ -57,11 +57,11 @@ export function AuditorCard({
           required
         />
         <Input 
-          label="Carnet" 
-          value={member.carnet}
-          onChange={(e) => onUpdate(member.id, 'carnet', e.target.value)}
-          placeholder="Ej. AB12345"
-          error={errors?.carnet}
+          label="Email" 
+          value={member.email}
+          onChange={(e) => onUpdate(member.id, 'email', e.target.value)}
+          placeholder="Ej. juan.perez@example.com"
+          error={errors?.email}
           required
         />
       </div>

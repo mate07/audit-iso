@@ -29,11 +29,11 @@ export interface Auditor {
   id: string;
   nombre: string;
   apellido: string;
-  carnet: string;
+  email: string;
 }
 
 export interface AuditorError {
   nombre?: string;
   apellido?: string;
-  carnet?: string;
+  email?: string;
 }
